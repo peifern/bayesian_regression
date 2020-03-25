@@ -1,0 +1,1 @@
+This repository contains R scripts testing various regression models using Bayesian inference. Most modeling fit using Stan. 
