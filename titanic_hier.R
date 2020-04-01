@@ -2,27 +2,33 @@ library(tidyverse)
 library(rstanarm)
 library(titanic)
 
-View(head(titanic_train, 10))
+# View(head(titanic_train, 10))
 
-titanic_train %>% 
-  glimpse
+# titanic_train %>% 
+#   glimpse
 
 titanic_summary <- titanic_train %>%
+#  mutate(children_flag = ifelse(Age <= 16, 1, 0)) %>%
   group_by(Pclass, Sex) %>%
   summarise(passengers = n(),
             survived = sum(Survived, na.rm = TRUE),
             pct_survived = survived / passengers,
-            med_fare = median(Fare, na.rm = TRUE))
+            med_fare = median(Fare, na.rm = TRUE),
+            med_age  = median(Age, na.rm = TRUE))
 
 View(titanic_summary)
+
+## Set the priors
+# using the training data, find the mean and std deviation of the survival rate
+titanicMean <- mean(titanic_train$Survived)
+titanicStd_dev <- sqrt(var(titanic_train$Survived))
 
 ## fit a standard logistic regression model
 hfit_survived = stan_glm(cbind(survived, passengers - survived) ~ Sex,
                         family = binomial(), chains = 1, 
                         iter = 4000, warmup = 2000,
-                        # use the same priors from the last TAP test
-                        prior_intercept = normal(0, 1),
-                        prior = normal(0, 1),
+                        prior_intercept = normal(titanicMean, titanicStd_dev),
+                        prior = normal(titanicMean, titanicStd_dev),
                         adapt_delta = 0.9,
                         data = titanic_summary)
 
@@ -72,10 +78,9 @@ View(titanic_summary2)
 hfit_survived_hier = stan_glmer(cbind(survived, passengers - survived) ~ (1 | Sex / Pclass),
                               family = binomial(), chains = 1, 
                               iter = 4000, warmup = 2000,
-                              # use the same priors from the last TAP test
-                              prior_intercept = normal(0, 1),
-                              prior = normal(0, 1),
-                              adapt_delta = 0.99,
+                              prior_intercept = normal(titanicMean, titanicStd_dev),
+                              prior = normal(titanicMean, titanicStd_dev),
+                              adapt_delta = 0.999,
                               data = titanic_summary2)
 
 summary(hfit_survived_hier, digits = 3)
@@ -99,7 +104,19 @@ View(hfit_survived_hier_samples)
 
 ## get likelihood of condition from the posterior properties
 hfit_survived_hier_samples %>%
-  summarise(`female > male` = mean(women > men),
+  summarise(`first class > second class` = 
+              mean((first_class_men + first_class_women) > (second_class_men + second_class_women)),
+            `second class > third class` = 
+              mean((second_class_men + second_class_women) > (third_class_men + third_class_women)),
+            `first class men > second class men` = 
+              mean((first_class_men) > (second_class_men)),
+            `second class men > third class men` = 
+              mean((second_class_men) > (third_class_men)),
+            `first class women > second class women` =
+              mean((first_class_women > second_class_women)),
+            `second class women > third class women` =
+              mean((second_class_women > third_class_women)),
+            `female > male` = mean(women > men),
             `first class female > first class male` = 
               mean((women + first_class_women) > (men + first_class_men)),
             `second class female > second class male` = 
@@ -133,7 +150,16 @@ hfit_survived_hier_samples %>%
   ggplot(aes(estimate, fill = type)) +
   geom_density(alpha = 0.5)
 
-
+## Plot the posterior distributions of Male and Female grouped by First - Third classes
+hfit_survived_hier_samples %>%
+  mutate(first_class  = first_class_women + first_class_men,
+         second_class = second_class_women + second_class_men,
+         third_class  = third_class_women + third_class_men) %>%
+  tidyr::gather(type, estimate, -women, -men, -sigma1, -sigma2, -first_class_women, -first_class_men, 
+                -second_class_women, -second_class_men, 
+                -third_class_women, -third_class_men, -intercept) %>%
+  ggplot(aes(estimate, fill = type)) +
+  geom_density(alpha = 0.5)
 
 
 
