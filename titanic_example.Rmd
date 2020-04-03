@@ -1,0 +1,60 @@
+---
+title: "Test Measurement with Bayesian Inference"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This post is part 2 in a 2-part series on A/B testing. Part 1 introduced a way to compare multiple test design options and can be found `here`. This section focuses on test measurement. Specifically, we'll walk through an approach to measure the difference between test variants using Bayesian inference. Bayesian inference lets us see if the variants are in fact different as well as *how* different they are, something a normal 'frequentist' approach does not do so well. 
+
+In this article we'll walk through a simple A/B test measurement example as well as a multi-level example, where the relationship between variants is different within different groups. We'll also show how to combine conversion rate measurement with dollar spend measurement to evaluate the overall impact of a test (since conversion is only half of the story). 
+
+
+Contents:
+1. Data overview and prep
+  a. create a summary table
+  b. set the priors
+2. Modeling with a binary predictor (basic A/B test conversion rate measurement)
+  a. model training
+  b. sampling from the posterior distribution
+  c. graphing the variants
+3. Multi-level modeling with a binary predictor (hierarchical conversion rate measurement)
+  a. model training
+  b. sampling from the posterior distribution
+  c. graphing the variants
+4. Multi-level modeling with a continuous predictor (hierarchical spend measurement)
+  a. model training
+  b. sampling from the posterior distribution
+  c. graphing the variants
+5. Combine conversion rate and spend measurement results
+  a. combine the posterior distribution samples
+  b. calculate overall likelihood
+
+
+1. Data Overview
+
+For this 
+
+```{r titanic}
+titanic_summary <- titanic_train %>%
+  group_by(Pclass, Sex) %>%
+  summarise(passengers = n(),
+            survived = sum(Survived, na.rm = TRUE),
+            pct_survived = survived / passengers,
+            med_fare = median(Fare, na.rm = TRUE),
+            med_age  = median(Age, na.rm = TRUE))
+
+View(titanic_summary)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
