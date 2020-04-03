@@ -1,0 +1,142 @@
+---
+title: "marketing_example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(rstanarm)
+library(ggplot2)
+```
+
+## 
+
+This post is part 2 in a 2-part series on A/B testing. Part 1 introduced a way to compare multiple test design options and can be found `here`. This section focuses on test measurement. Specifically, we'll walk through an approach to measure the difference between test variants using Bayesian inference. Bayesian inference lets us see if the variants are in fact different as well as *how* different they are, something a normal frequentist approach does not do so well. 
+
+In this article we'll walk through a simple A/B test measurement example as well as a multi-level example, where the relationship between variants is different within different groups. We'll also show how to combine conversion rate measurement with dollar spend measurement to evaluate the overall impact of a test (since conversion is only half of the story). 
+
+#### Data setup
+
+```{r}
+# Create conversion rate for Group 1:
+set.seed(123)
+group_1_conversion <- rbinom(2000, 1, 0.09)
+group_1_spend <- rnorm(2000, 150, 60)
+
+group_1 <- tibble(group_1_conversion) %>%
+  bind_cols(tibble(group_1_spend)) %>%
+  mutate(spend = ifelse(group_1_conversion == 1, round(group_1_spend, 2), NA),
+         group = 'A') %>%
+  rename(conversion = group_1_conversion) %>%
+  select(group, conversion, spend)
+
+group_2_conversion <- rbinom(2000, 1, 0.08)
+group_2_spend <- rnorm(2000, 200, 75)
+
+group_2 <- tibble(group_2_conversion) %>%
+  bind_cols(tibble(group_2_spend)) %>%
+  mutate(spend = ifelse(group_2_conversion == 1, round(group_2_spend, 2), NA),
+         group = 'B') %>%
+  rename(conversion = group_2_conversion) %>%
+  select(group, conversion, spend)
+
+combined <- group_1 %>%
+  bind_rows(group_2) %>%
+  filter(!(conversion == 1 & spend < 5))
+
+combined_summary <- combined %>%
+  group_by(group) %>%
+  summarise(customers = n(),
+            conversions = sum(conversion, na.rm = T),
+            conversion_rate = mean(conversion, na.rm = T),
+            spend = mean(spend, na.rm = T))
+  
+combined_summary
+
+```
+
+
+#### Fit regression
+
+## Frequentist method
+
+We'll start with a traditional measurement approach. We fit a logistic regression model to our data to see if Group (our predictor) has a statistically significant relationship to Conversion (our outcome). Our null hypothesis is that there is no relationship between Group and Conversion, and we'll use a standard P-value threshold of 0.05 to either confirm or reject this hypothesis. 
+
+So,
+
+P >= 0.05 --> Fail to reject null (no relationship between Group and Conversion)
+P < 0.05 -->  Reject the null (there is a relationship between Group and Conversion)
+
+```{r}
+conv_fit_freq <- glm(conversion ~ group,
+                     data = combined,
+                     family = binomial())
+
+summary(conv_fit_freq)
+```
+
+Our model results show that the estimated coefficient for Group B is negative, indicating that Group B customers have a lower conversion rate than Group A. However, the p-value for our group predictor is 0.475, which is above our 0.05 threshold. This means we failed to reject our null hypothesis that there is no relationship between Group and Conversion. In other words, there is no differnce in Conversion between customers receiving A vs B. 
+
+But hold on... our summary stats showed that Group A was 0.6 percentage points higher than Group B. That's only 24 customers out of our 4,000 customer sample, but if we sent this campaign to all 3 million customers on our mailing list, that would be an extra 18k customer conversions! (0.6% * 3,000,000). We don't want to miss an opportunity like that without _really_ analyzing our results. 
+
+## Bayesian method
+
+Switching from a Frequentist to a Bayesian approach means thinking about our data in terms of probabilities. Rather than a 'yes' or 'no' answer to the hypothesis about the relationship between Group and Conversion, we test the same hypothesis by generating the probability that Conversion in one Group is higher than the other. 
+
+Generate is the operative word here. Bayesian logistic regression takes 
+
+```{r echo=FALSE}
+conv_fit_bayes = stan_glm(cbind(conversions, customers - conversions) ~ group,
+                         family = binomial(), chains = 1, 
+                         iter = 4000, warmup = 2000,
+#                         prior_intercept = binomial(conv_mean, conv_std),
+#                         prior = normal(titanicMean, titanicStd_dev),
+                         adapt_delta = 0.9,
+                         data = combined_summary)
+
+summary(conv_fit_bayes, digits = 3)
+
+View(as.data.frame(conv_fit_bayes))
+
+conv_fit_samples <- as.data.frame(conv_fit_bayes) %>%
+  set_names(c("intercept",
+              "Group_B"))
+
+View(conv_fit_samples)
+```
+
+
+
+```{r}
+## get likelihood of condition from the posterior properties
+conv_fit_samples %>%
+  summarise(`Group A > Group B` = mean(intercept > intercept + Group_B)) %>%
+  t %>%
+  as.data.frame %>%
+  rownames_to_column() %>%
+  mutate_if(is.numeric, scales::percent) %>%
+  set_names(c("Condition", "Probability of Condition"))
+```
+
+Drawing from our posterior distribution, we see the probability of A having a higher conversion rate than B is 78%. In other words, if we ran this test 100 times, we would expect more conversions in group A 78 times out of 100. 
+
+For the visual learners (myself included), it may help to plot the posterior distribution to see how different A is from B. 
+
+```{r}
+## Plot the posterior distributions of each group
+conv_fit_samples %>%
+  mutate(A = intercept,
+         B = intercept + Group_B) %>%
+  tidyr::gather(type, estimate, -Group_B, -intercept) %>%
+  ggplot(aes(estimate, fill = type)) +
+  geom_density(alpha = 0.5)
+```
+
+From a marketing perspective, test A is a pretty clear winner. There's no inherent difference in cost to produce and send emails with A content, so the decision to go with A over B seems like a no-brainer. But conversion rate is only half of the picture...
+
+## Factor in Spend
+
+In addition to conversion rates, we also want to know how much customers actually spent when they convert. The different email content may inspire different purchase patterns. Maybe customers in group B spent more than group A, thus potentially making our decision more difficult. 
+
+
+
