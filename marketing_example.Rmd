@@ -19,9 +19,9 @@ In this article we'll walk through a simple A/B test measurement example as well
 
 ```{r}
 # Create conversion rate for Group 1:
-set.seed(123)
-group_1_conversion <- rbinom(2000, 1, 0.09)
-group_1_spend <- rnorm(2000, 150, 60)
+set.seed(1234)
+group_1_conversion <- rbinom(2000, 1, 0.088)
+group_1_spend <- rnorm(2000, 160, 75)
 
 group_1 <- tibble(group_1_conversion) %>%
   bind_cols(tibble(group_1_spend)) %>%
@@ -31,7 +31,7 @@ group_1 <- tibble(group_1_conversion) %>%
   select(group, conversion, spend)
 
 group_2_conversion <- rbinom(2000, 1, 0.08)
-group_2_spend <- rnorm(2000, 200, 75)
+group_2_spend <- rnorm(2000, 150, 65)
 
 group_2 <- tibble(group_2_conversion) %>%
   bind_cols(tibble(group_2_spend)) %>%
@@ -73,44 +73,80 @@ conv_fit_freq <- glm(conversion ~ group,
                      family = binomial())
 
 summary(conv_fit_freq)
+
+spend_fit_freq <- glm(spend ~ group,
+                     data = combined,
+                     family = gaussian())
+
+summary(spend_fit_freq)
+
 ```
 
-Our model results show that the estimated coefficient for Group B is negative, indicating that Group B customers have a lower conversion rate than Group A. However, the p-value for our group predictor is 0.475, which is above our 0.05 threshold. This means we failed to reject our null hypothesis that there is no relationship between Group and Conversion. In other words, there is no differnce in Conversion between customers receiving A vs B. 
+Our model results show that the estimated coefficient for Group B is negative in both models, indicating that Group B customers have a lower conversion rate and lower spend than Group A. However, the p-value of the Group coefficient is 0.521 for conversion and 0.424 for spend, which are both above our 0.05 threshold. This means we failed to reject our null hypothesis that there is no relationship between Group and Conversion. In other words, there is no differnce in Conversion between customers receiving A vs B. 
 
-But hold on... our summary stats showed that Group A was 0.6 percentage points higher than Group B. That's only 24 customers out of our 4,000 customer sample, but if we sent this campaign to all 3 million customers on our mailing list, that would be an extra 18k customer conversions! (0.6% * 3,000,000). We don't want to miss an opportunity like that without _really_ analyzing our results. 
+But hold on... our summary stats showed that Group A had a conversion rate ~0.6 percentage points higher than Group B. That's only 24 customers out of our 4,000 customer sample, but if we sent this campaign to 3 million customers on our mailing list, that would be an extra 18k customer conversions! (0.6% * 3,000,000). We don't want to miss an opportunity like that without _really_ analyzing our results. 
 
 ## Bayesian method
 
 Switching from a Frequentist to a Bayesian approach means thinking about our data in terms of probabilities. Rather than a 'yes' or 'no' answer to the hypothesis about the relationship between Group and Conversion, we test the same hypothesis by generating the probability that Conversion in one Group is higher than the other. 
 
-Generate is the operative word here. Bayesian logistic regression takes 
+In a nutshell, Bayesian regression uses the traditional underlying regression formula, but instead of retuning a point estimate for the input coefficients (beta), it generates a distribution for the intercept, input coefficients, and error terms. This is known as the posterior distribution and is generated using previous knowledge of the data ('priors') combined with the observed results. (if you want to better understand the theory behind Bayesian logistic regression, check out this great overview by Will Kurt: https://www.countbayesie.com/blog/2019/6/12/logistic-regression-from-bayes-theorem or this rstanarm tutorial: http://www.tqmp.org/RegularArticles/vol14-2/p099/p099.pdf)
+
+We'll use the four steps of Bayesian analysis outlined by Stan to get a better understanding of our results:
+
+```{text}
+From https://mc-stan.org/rstanarm/articles/rstanarm.html:
+
+The four steps of a Bayesian analysis are
+
+  1. Specify a joint distribution for the outcome(s) and all the unknowns, which typically takes the form of a marginal prior distribution for the unknowns multiplied by a likelihood for the outcome(s) conditional on the unknowns. This joint distribution is proportional to a posterior distribution of the unknowns conditional on the observed data
+  2. Draw from posterior distribution using Markov Chain Monte Carlo (MCMC).
+  3. Evaluate how well the model fits the data and possibly revise the model.
+  4. Draw from the posterior predictive distribution of the outcome(s) given interesting values of the predictors in order to visualize how a manipulation of a predictor affects (a function of) the outcome(s).
+```
+
+We'll use the R interface to Stan _rstanarm_ to fit the model (specify our posterior distribution), draw samples using MCMC, and evaluate model fit.  
+
+First off, what are our priors? Let's assume we're on a newly formed team that has no previous knowledge of test results. This means we have no prior belief about what our conversion rate or spend _should be_. Stan handles this nicely by using weakly informative priors by default. The default priors for the intercept and input coefficients are assumed to be normal distributions, and Stan adjusts the scales according to the training data. More detail about priors and how Stan uses them can be found in the _rstanarm_ vingette: https://cran.r-project.org/web/packages/rstanarm/vignettes/priors.html. We'll check in later to see how Stan has (or has not) adjusted the default priors during training. 
+
+Next we need to specify a few key details in the modeling stage. Since our outcome is a conversion rate (0 or 1), we'll use use the _binomial distribution_. We then set the number of iterations at 4,000, with a warmup of 2,000. This gives Stan 2,000 iterations to adjust the priors (if needed), and leaves us with a healthy 2,000 record sample drawn from the posterior. Finally, we'll set *chains = 4* so that we can simultaneously run 4 different Markov chains and ensure that they all converge on the same parameter estimates. 
 
 ```{r echo=FALSE}
 conv_fit_bayes = stan_glm(cbind(conversions, customers - conversions) ~ group,
-                         family = binomial(), chains = 1, 
+                         family = binomial(link = logit), chains = 4, 
                          iter = 4000, warmup = 2000,
 #                         prior_intercept = binomial(conv_mean, conv_std),
 #                         prior = normal(titanicMean, titanicStd_dev),
-                         adapt_delta = 0.9,
+#                         adapt_delta = 0.9,
                          data = combined_summary)
 
 summary(conv_fit_bayes, digits = 3)
+prior_summary(conv_fit_bayes)
 
-View(as.data.frame(conv_fit_bayes))
+ci85 <- posterior_interval(conv_fit_bayes, prob = 0.85, pars = "groupB")
+round(ci85, 2)
+
+ plot(conv_fit_bayes, "trace")
+
+#View(as.data.frame(conv_fit_bayes))
 
 conv_fit_samples <- as.data.frame(conv_fit_bayes) %>%
-  set_names(c("intercept",
-              "Group_B"))
+  set_names(c("intercept_conv",
+              "Group_B_conv"))
 
-View(conv_fit_samples)
+#View(conv_fit_samples)
 ```
 
+A quick check of the summary stats looks good. _Rhat_ = 1 for all parameters, indicating that the model successfully converged on a posterior distribution for each one. We also see the effective sample size for each parameter is relatively high, well above 10% of the total iterations used (4,000). Additionally, looking at the trace plots we see each of the 4 chains converged around the same parameter estimates for both the intercept and our Group coefficient. 
 
+The output from training our model using _rstanarm_ is a set of 2,000 values sampled from the posterior distribution. We have samples for the intercept and the coefficient on our single predictor Group. Since our predictor was a 2-level categorical, our model uses Group B as a binary flag. We can now easily compare Group A against group B by looking at the sampled coefficients of Group. A negative value for the Group coefficient indicates Group B had a lower conversion rate than Group A, and a positive value indicates the opposite. 
+
+Using a quick *tidyr*, we can take the mean of the logical expression `Group_B < 0` across our 2,000 samples to get the probability that Group A outperformed Group B. 
 
 ```{r}
 ## get likelihood of condition from the posterior properties
 conv_fit_samples %>%
-  summarise(`Group A > Group B` = mean(intercept > intercept + Group_B)) %>%
+  summarise(`Group A > Group B` = mean(0 > Group_B_conv)) %>%
   t %>%
   as.data.frame %>%
   rownames_to_column() %>%
@@ -118,16 +154,16 @@ conv_fit_samples %>%
   set_names(c("Condition", "Probability of Condition"))
 ```
 
-Drawing from our posterior distribution, we see the probability of A having a higher conversion rate than B is 78%. In other words, if we ran this test 100 times, we would expect more conversions in group A 78 times out of 100. 
+We see that Group B was negative 94% of the time, therefore the probability of A having a higher conversion rate than B is 94%. In other words, if we ran this test 100 times, we would expect more conversions in group A 94 times out of 100. 
 
 For the visual learners (myself included), it may help to plot the posterior distribution to see how different A is from B. 
 
 ```{r}
 ## Plot the posterior distributions of each group
 conv_fit_samples %>%
-  mutate(A = intercept,
-         B = intercept + Group_B) %>%
-  tidyr::gather(type, estimate, -Group_B, -intercept) %>%
+  mutate(A = intercept_conv,
+         B = intercept_conv + Group_B_conv) %>%
+  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv) %>%
   ggplot(aes(estimate, fill = type)) +
   geom_density(alpha = 0.5)
 ```
@@ -136,7 +172,105 @@ From a marketing perspective, test A is a pretty clear winner. There's no inhere
 
 ## Factor in Spend
 
-In addition to conversion rates, we also want to know how much customers actually spent when they convert. The different email content may inspire different purchase patterns. Maybe customers in group B spent more than group A, thus potentially making our decision more difficult. 
+In addition to conversion rates, we also want to know how much customers actually spent when they convert. The different email content may inspire different purchase patterns, which we'll need to factor in when we present the *total expected value* of our campaign to the business. 
+
+
+
+```{r}
+#### Bayesian Spend regression ----
+spend_fit_bayes = stan_glm(spend ~ group,
+                            chains = 1,
+                            iter = 6000, warmup = 4000,
+#                            adapt_delta = 0.99,
+                            data = combined)
+
+summary(spend_fit_bayes, digits = 3)
+prior_summary(spend_fit_bayes)
+
+#View(as.data.frame(spend_fit_bayes))
+
+spend_fit_samples <- as.data.frame(spend_fit_bayes) %>%
+  set_names(c("intercept_spend",
+              "Group_B_spend",
+              "Sigma"))
+
+#View(spend_fit_samples)
+
+```
+
+
+
+```{r}
+spend_fit_samples %>%
+  summarise(`Group A > Group B` = mean(intercept_spend > intercept_spend + Group_B_spend)) %>%
+  t %>%
+  as.data.frame %>%
+  rownames_to_column() %>%
+  mutate_if(is.numeric, scales::percent) %>%
+  set_names(c("Condition", "Probability of Condition"))
+```
+
+Sure enough, customers in Group B spent more than Group A >99% of the time. Now let's see what that translates to in dollars. 
+
+## Calculate the average difference in spend between A and B
+
+```{r}
+spend_fit_samples %>%
+  summarise(`Group A - Group B` = mean((intercept_spend) - (intercept_spend + Group_B_spend)),
+            `Group B - Group A` = mean((intercept_spend + Group_B_spend) - intercept_spend))
+```
+
+So Group B spends about $34 more on average than Group A when they shop from the email. Now we have conflicting information: Group A drives a higher conversion rate than Group B, but Group B spends more when they convert. We could stop here and make our decision based on whether we care more about conversion or order value, but why not combine the two to pick an overall winner?
+
+## Combine Conversion and Spend to get an overall response rate
+
+We can pick an overall winner by combining the random samples from our conversion and spend posterior distributions. The total value of a campaign is given by the % of customers who convert multiplied by the total amount they spend. So, using our posterior samples, we simply multiply the conversion coefficients by the spend coefficients for each Group and compare. 
+
+We'll start by looking at the probability that the total value of Group A is greater than the total value of Group B.
+
+```{r}
+overall_results <- conv_fit_samples %>%
+  bind_cols(spend_fit_samples)
+
+overall_results %>%
+  summarise(`Group A > Group B` = mean((plogis(intercept_conv)*(intercept_spend)) > 
+                                      (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend))),
+            `Group B > Group A` = mean((plogis(intercept_conv + Group_B_conv)*(intercept_spend + Group_B_spend)) > 
+                                      (plogis(intercept_conv) * (intercept_spend)))) %>%
+  mutate_if(is.numeric, scales::percent)
+
+```
+
+This shows a 90% probability that B has a higher total value than A. This is a pretty strong sign that the content used in Group B is actually worth more to the business. 
+
+## How much is the expected difference in revenue?
+
+Now we can check the average difference in total value between the two Groups. This will tell us how much extra revenue we can expect for each customer we *send the email to*. 
+
+```{r}
+overall_results %>%
+  summarise(`Group A - Group B` = mean((plogis(intercept_conv) * (intercept_spend)) - 
+                                      (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend)))) %>%
+  mutate_if(is.numeric, scales::dollar)
+```
+
+From our combined posterior distributions we calculate a difference in total value of $1.93 in favor of Group B. This means that on average, we would expect $1.93 more revenue per send using Group B vs. Group A.
+
+And finally, we can visualize these distributions using _ggplot_. 
+
+```{r}
+overall_results %>%
+  mutate(A = (plogis(intercept_conv) * (intercept_spend)),
+         B = (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend))) %>%
+  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv, -intercept_spend, -Group_B_spend, -Sigma) %>%
+  ggplot(aes(estimate, fill = type)) +
+  geom_density(alpha = 0.5)
+```
+
+Notice that the mean estimate for Group A is ~12.5 and the mean estimate for Group B is ~14.5, a difference of ~2. 
+
+*Conclusion* 
+
 
 
 
