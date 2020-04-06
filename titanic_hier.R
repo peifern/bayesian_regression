@@ -2,7 +2,7 @@ library(tidyverse)
 library(rstanarm)
 library(titanic)
 
-# View(head(titanic_train, 10))
+View(head(titanic_train, 10))
 
 # titanic_train %>% 
 #   glimpse
