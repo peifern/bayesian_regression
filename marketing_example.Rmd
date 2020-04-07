@@ -7,6 +7,7 @@ output: html_document
 library(tidyverse)
 library(rstanarm)
 library(ggplot2)
+library(kableExtra)
 
 source("marketing_example.R")
 
@@ -26,6 +27,10 @@ Let's set the stage. Our business partners have designed and executed a new emai
 
 ```{r}
 combined_summary
+
+combined_summary %>%
+  kable() %>%
+  kable_styling(full_width = F)
 ```
 
 It's been 7 days since the email went out and we have our results. 189 customers who received Content A made a purchase and spent $156 on average, while 162 customers who received Content B made a purchase and spend $149 on average. (3 customers sent Content A didn't receive the email) 
@@ -94,8 +99,8 @@ Next we need to specify a few key details in the modeling stage. Since our outco
 summary(conv_fit_bayes, digits = 3)
 prior_summary(conv_fit_bayes)
 
-ci85 <- posterior_interval(conv_fit_bayes, prob = 0.85, pars = "groupB")
-round(ci85, 2)
+#ci85 <- posterior_interval(conv_fit_bayes, prob = 0.85, pars = "groupB")
+#round(ci85, 2)
 
 plot(conv_fit_bayes, "trace")
 ```
@@ -126,8 +131,8 @@ For the visual learners (myself included), it may help to plot the posterior dis
 conv_fit_samples %>%
   mutate(A = intercept_conv,
          B = intercept_conv + Group_B_conv) %>%
-  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv) %>%
-  ggplot(aes(estimate, fill = type)) +
+  tidyr::gather(Content, Estimate, -Group_B_conv, -intercept_conv) %>%
+  ggplot(aes(Estimate, fill = Content)) +
   geom_density(alpha = 0.5)
 ```
 
@@ -168,8 +173,7 @@ Sure enough, customers in Group A spent more than Group B 85% of the time. Now l
 
 ```{r}
 spend_fit_samples %>%
-  summarise(`Group A - Group B` = mean((intercept_spend) - (intercept_spend + Group_B_spend)),
-            `Group B - Group A` = mean((intercept_spend + Group_B_spend) - intercept_spend))
+  summarise(`Group A - Group B` = scales::dollar(mean((intercept_spend) - (intercept_spend + Group_B_spend))))
 ```
 
 So Group A spends about $7.46 more on average than Group B when they shop from the email. Now we have two pieces of strong evidence showing that Group A drives a higher conversion rate and spends more when they convert. Now let's combine the two signals to see what the difference in *total value* is between the two. 
@@ -210,8 +214,8 @@ And finally, we can visualize these distributions using _ggplot_.
 overall_results %>%
   mutate(A = (plogis(intercept_conv) * (intercept_spend)),
          B = (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend))) %>%
-  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv, -intercept_spend, -Group_B_spend, -Sigma) %>%
-  ggplot(aes(estimate, fill = type)) +
+  tidyr::gather(Content, Estimate, -Group_B_conv, -intercept_conv, -intercept_spend, -Group_B_spend, -Sigma) %>%
+  ggplot(aes(Estimate, fill = Content)) +
   geom_density(alpha = 0.5)
 ```
 

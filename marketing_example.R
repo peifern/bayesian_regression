@@ -44,7 +44,7 @@ round(ci85, 2)
 
 plot(conv_fit_bayes, "trace")
 
-#View(as.data.frame(conv_fit_bayes))
+View(as.data.frame(conv_fit_bayes))
 
 conv_fit_samples <- as.data.frame(conv_fit_bayes) %>%
   set_names(c("intercept_conv",
