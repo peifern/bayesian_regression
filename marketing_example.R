@@ -50,8 +50,6 @@ conv_fit_samples <- as.data.frame(conv_fit_bayes) %>%
   set_names(c("intercept_conv",
               "Group_B_conv"))
 
-#View(conv_fit_samples)
-
 ## get likelihood of condition from the posterior properties
 conv_fit_samples %>%
   summarise(`Group A > Group B` = mean(0 > Group_B_conv)) %>%
@@ -72,8 +70,6 @@ conv_fit_samples %>%
 
 
 ##### Bayesian Spend Regression
-
-#### Bayesian Spend regression ----
 spend_fit_bayes = stan_glm(spend ~ group,
                            chains = 4,
                            iter = 6000, warmup = 4000,
@@ -87,8 +83,6 @@ ci85 <- posterior_interval(spend_fit_bayes, prob = 0.85, pars = "groupB")
 round(ci85, 2)
 
 plot(spend_fit_bayes, "trace")
-
-#View(as.data.frame(spend_fit_bayes))
 
 spend_fit_samples <- as.data.frame(spend_fit_bayes) %>%
   set_names(c("intercept_spend",
