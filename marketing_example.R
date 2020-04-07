@@ -2,40 +2,16 @@ library(tidyverse)
 library(rstanarm)
 library(ggplot2)
 
-# Create conversion rate for Group 1:
-set.seed(1234)
-group_1_conversion <- rbinom(2000, 1, 0.088)
-group_1_spend <- rnorm(2000, 160, 75)
-
-group_1 <- tibble(group_1_conversion) %>%
-  bind_cols(tibble(group_1_spend)) %>%
-  mutate(spend = ifelse(group_1_conversion == 1, round(group_1_spend, 2), NA),
-         group = 'A') %>%
-  rename(conversion = group_1_conversion) %>%
-  select(group, conversion, spend)
-
-group_2_conversion <- rbinom(2000, 1, 0.08)
-group_2_spend <- rnorm(2000, 150, 65)
-
-group_2 <- tibble(group_2_conversion) %>%
-  bind_cols(tibble(group_2_spend)) %>%
-  mutate(spend = ifelse(group_2_conversion == 1, round(group_2_spend, 2), NA),
-         group = 'B') %>%
-  rename(conversion = group_2_conversion) %>%
-  select(group, conversion, spend)
-
-combined <- group_1 %>%
-  bind_rows(group_2) %>%
-  filter(!(conversion == 1 & spend < 5))
+combined <- readRDS("data.RDS")
 
 combined_summary <- combined %>%
   group_by(group) %>%
   summarise(customers = n(),
             conversions = sum(conversion, na.rm = T),
-            conversion_rate = scales::percent(mean(conversion, na.rm = T)),
+            conversion_rate = scales::percent(mean(conversion, na.rm = T), accuracy = 0.01),
             spend = scales::dollar(mean(spend, na.rm = T)))
 
-#combined_summary
+combined_summary
 
 ### Frequentist regression
 
