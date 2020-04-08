@@ -114,7 +114,7 @@ Using a quick *tidyr*, we can take the mean of the logical expression `Group_B <
 ```{r}
 ## get likelihood of condition from the posterior properties
 conv_fit_samples %>%
-  summarise(`Group A > Group B` = mean(0 > Group_B_conv)) %>%
+  summarise(`Designer > In-House` = mean(0 > In_House_Flag_conv)) %>%
   t %>%
   as.data.frame %>%
   rownames_to_column() %>%
@@ -129,10 +129,12 @@ For the visual learners (myself included), it may help to plot the posterior dis
 ```{r}
 ## Plot the posterior distributions of each group
 conv_fit_samples %>%
-  mutate(A = intercept_conv,
-         B = intercept_conv + Group_B_conv) %>%
-  tidyr::gather(Content, Estimate, -Group_B_conv, -intercept_conv) %>%
+  mutate(In_House = intercept_conv,
+         Designer = intercept_conv + In_House_Flag_conv) %>%
+  tidyr::gather(Content, Estimate, -In_House_Flag_conv, -intercept_conv) %>%
   ggplot(aes(Estimate, fill = Content)) +
+  xlab("Conversion Point Estimate") +
+  ggtitle("Conversion Rate Posterior Distribution") +
   geom_density(alpha = 0.5)
 ```
 
@@ -161,7 +163,7 @@ Using the same process as before, we'll take the mean of the logical expression 
 
 ```{r}
 spend_fit_samples %>%
-  summarise(`Group A > Group B` = mean(0 > Group_B_spend)) %>%
+  summarise(`Designer > In-House` = mean(0 > In_House_Flag_spend)) %>%
   t %>%
   as.data.frame %>%
   rownames_to_column() %>%
@@ -173,7 +175,7 @@ Sure enough, customers in Group A spent more than Group B 85% of the time. Now l
 
 ```{r}
 spend_fit_samples %>%
-  summarise(`Group A - Group B` = scales::dollar(mean((intercept_spend) - (intercept_spend + Group_B_spend))))
+  summarise(`Designer - In-House` = scales::dollar(mean((intercept_spend) - (intercept_spend + In_House_Flag_spend))))
 ```
 
 So Group A spends about $7.46 more on average than Group B when they shop from the email. Now we have two pieces of strong evidence showing that Group A drives a higher conversion rate and spends more when they convert. Now let's combine the two signals to see what the difference in *total value* is between the two. 
@@ -189,8 +191,8 @@ overall_results <- conv_fit_samples %>%
   bind_cols(spend_fit_samples)
 
 overall_results %>%
-  summarise(`Group A > Group B` = mean((plogis(intercept_conv)*(intercept_spend)) > 
-                                      (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend)))) %>%
+  summarise(`Designer > In-House` = mean((plogis(intercept_conv)*(intercept_spend)) > 
+                                         (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend)))) %>%
   mutate_if(is.numeric, scales::percent)
 
 ```
@@ -201,8 +203,8 @@ Now that we have a very strong probability that A is greater than B, the questio
 
 ```{r}
 overall_results %>%
-  summarise(`Group A - Group B` = mean((plogis(intercept_conv) * (intercept_spend)) - 
-                                      (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend)))) %>%
+  summarise(`Designer - In-House` = mean((plogis(intercept_conv) * (intercept_spend)) - 
+                                      (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend)))) %>%
   mutate_if(is.numeric, scales::dollar)
 ```
 
@@ -212,10 +214,12 @@ And finally, we can visualize these distributions using _ggplot_.
 
 ```{r}
 overall_results %>%
-  mutate(A = (plogis(intercept_conv) * (intercept_spend)),
-         B = (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend))) %>%
-  tidyr::gather(Content, Estimate, -Group_B_conv, -intercept_conv, -intercept_spend, -Group_B_spend, -Sigma) %>%
+  mutate(Designer = (plogis(intercept_conv) * (intercept_spend)),
+         In_House = (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend))) %>%
+  tidyr::gather(Content, Estimate, -In_House_Flag_conv, -intercept_conv, -intercept_spend, -In_House_Flag_spend, -Sigma) %>%
   ggplot(aes(Estimate, fill = Content)) +
+  xlab("Combined Point Estimate") +
+  ggtitle("Combined Posterior Distribution") +
   geom_density(alpha = 0.5)
 ```
 

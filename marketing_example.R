@@ -1,8 +1,10 @@
 library(tidyverse)
 library(rstanarm)
 library(ggplot2)
+library(kableExtra)
 
-combined <- readRDS("data.RDS")
+combined <- readRDS("data.RDS") %>%
+  mutate(group = ifelse(group == 'A', 'Designer', 'In-House'))
 
 combined_summary <- combined %>%
   group_by(group) %>%
@@ -11,7 +13,9 @@ combined_summary <- combined %>%
             conversion_rate = scales::percent(mean(conversion, na.rm = T), accuracy = 0.01),
             spend = scales::dollar(mean(spend, na.rm = T)))
 
-combined_summary
+combined_summary %>%
+  kable() %>%
+  kable_styling(full_width = F)
 
 ### Frequentist regression
 
@@ -39,20 +43,22 @@ conv_fit_bayes = stan_glm(cbind(conversions, customers - conversions) ~ group,
 summary(conv_fit_bayes, digits = 3)
 prior_summary(conv_fit_bayes)
 
-ci85 <- posterior_interval(conv_fit_bayes, prob = 0.85, pars = "groupB")
-round(ci85, 2)
-
 plot(conv_fit_bayes, "trace")
+
+ci85 <- posterior_interval(conv_fit_bayes, prob = 0.85, pars = "groupIn-House")
+round(ci85, 2)
 
 View(as.data.frame(conv_fit_bayes))
 
 conv_fit_samples <- as.data.frame(conv_fit_bayes) %>%
   set_names(c("intercept_conv",
-              "Group_B_conv"))
+              "In_House_Flag_conv"))
+
+View(conv_fit_samples)
 
 ## get likelihood of condition from the posterior properties
 conv_fit_samples %>%
-  summarise(`Group A > Group B` = mean(0 > Group_B_conv)) %>%
+  summarise(`Designer > In-House` = mean(0 > In_House_Flag_conv)) %>%
   t %>%
   as.data.frame %>%
   rownames_to_column() %>%
@@ -63,8 +69,8 @@ conv_fit_samples %>%
 ## Plot the posterior distributions of each group
 conv_fit_samples %>%
   mutate(A = intercept_conv,
-         B = intercept_conv + Group_B_conv) %>%
-  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv) %>%
+         B = intercept_conv + In_House_Flag_conv) %>%
+  tidyr::gather(type, estimate, -In_House_Flag_conv, -intercept_conv) %>%
   ggplot(aes(estimate, fill = type)) +
   geom_density(alpha = 0.5)
 
@@ -79,20 +85,20 @@ spend_fit_bayes = stan_glm(spend ~ group,
 summary(spend_fit_bayes, digits = 3)
 prior_summary(spend_fit_bayes)
 
-ci85 <- posterior_interval(spend_fit_bayes, prob = 0.85, pars = "groupB")
+ci85 <- posterior_interval(spend_fit_bayes, prob = 0.85, pars = "groupIn-House")
 round(ci85, 2)
 
 plot(spend_fit_bayes, "trace")
 
 spend_fit_samples <- as.data.frame(spend_fit_bayes) %>%
   set_names(c("intercept_spend",
-              "Group_B_spend",
+              "In_House_Flag_spend",
               "Sigma"))
 
 #View(spend_fit_samples)
 
 spend_fit_samples %>%
-  summarise(`Group A > Group B` = mean(0 > Group_B_spend)) %>%
+  summarise(`Group A > Group B` = mean(0 > In_House_Flag_spend)) %>%
   t %>%
   as.data.frame %>%
   rownames_to_column() %>%
@@ -100,8 +106,8 @@ spend_fit_samples %>%
   set_names(c("Condition", "Probability of Condition"))
 
 spend_fit_samples %>%
-  summarise(`Group A - Group B` = mean((intercept_spend) - (intercept_spend + Group_B_spend)),
-            `Group B - Group A` = mean((intercept_spend + Group_B_spend) - intercept_spend))
+  summarise(`Group A - Group B` = mean((intercept_spend) - (intercept_spend + In_House_Flag_spend)),
+            `Group B - Group A` = mean((intercept_spend + In_House_Flag_spend) - intercept_spend))
 
 
 ##### Combined overall results
@@ -111,18 +117,18 @@ overall_results <- conv_fit_samples %>%
 
 overall_results %>%
   summarise(`Group A > Group B` = mean((plogis(intercept_conv)*(intercept_spend)) > 
-                                         (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend)))) %>%
+                                         (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend)))) %>%
   mutate_if(is.numeric, scales::percent)
 
 overall_results %>%
   summarise(`Group A - Group B` = mean((plogis(intercept_conv) * (intercept_spend)) - 
-                                         (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend)))) %>%
+                                         (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend)))) %>%
   mutate_if(is.numeric, scales::dollar)
 
 overall_results %>%
   mutate(A = (plogis(intercept_conv) * (intercept_spend)),
-         B = (plogis(intercept_conv + Group_B_conv) * (intercept_spend + Group_B_spend))) %>%
-  tidyr::gather(type, estimate, -Group_B_conv, -intercept_conv, -intercept_spend, -Group_B_spend, -Sigma) %>%
+         B = (plogis(intercept_conv + In_House_Flag_conv) * (intercept_spend + In_House_Flag_spend))) %>%
+  tidyr::gather(type, estimate, -In_House_Flag_conv, -intercept_conv, -intercept_spend, -In_House_Flag_spend, -Sigma) %>%
   ggplot(aes(estimate, fill = type)) +
   geom_density(alpha = 0.5)
 

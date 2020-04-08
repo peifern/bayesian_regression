@@ -10,7 +10,7 @@ group_1_spend <- rnorm(2000, 160, 75)
 group_1 <- tibble(group_1_conversion) %>%
   bind_cols(tibble(group_1_spend)) %>%
   mutate(spend = ifelse(group_1_conversion == 1, round(group_1_spend, 2), NA),
-         group = 'A') %>%
+         group = 'Designer') %>%
   rename(conversion = group_1_conversion) %>%
   select(group, conversion, spend)
 
@@ -20,7 +20,7 @@ group_2_spend <- rnorm(2000, 150, 65)
 group_2 <- tibble(group_2_conversion) %>%
   bind_cols(tibble(group_2_spend)) %>%
   mutate(spend = ifelse(group_2_conversion == 1, round(group_2_spend, 2), NA),
-         group = 'B') %>%
+         group = 'In-House') %>%
   rename(conversion = group_2_conversion) %>%
   select(group, conversion, spend)
 
