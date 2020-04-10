@@ -35,9 +35,6 @@ summary(spend_fit_freq)
 conv_fit_bayes = stan_glm(cbind(conversions, customers - conversions) ~ group,
                           family = binomial(link = logit), chains = 4, 
                           iter = 4000, warmup = 2000,
-                          #                         prior_intercept = binomial(conv_mean, conv_std),
-                          #                         prior = normal(titanicMean, titanicStd_dev),
-                          #                         adapt_delta = 0.9,
                           data = combined_summary)
 
 summary(conv_fit_bayes, digits = 3)
@@ -79,7 +76,6 @@ conv_fit_samples %>%
 spend_fit_bayes = stan_glm(spend ~ group,
                            chains = 4,
                            iter = 6000, warmup = 4000,
-                           #                            adapt_delta = 0.99,
                            data = combined)
 
 summary(spend_fit_bayes, digits = 3)
