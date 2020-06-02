@@ -1,4 +1,5 @@
 library(tidyverse)
+library(dplyr)
 library(rstanarm)
 library(ggplot2)
 library(kableExtra)
@@ -6,16 +7,61 @@ library(kableExtra)
 combined <- readRDS("data.RDS") %>%
   mutate(group = ifelse(group == 'A', 'Designer', 'In-House'))
 
+#write_csv(combined, 'data.csv')
+
 combined_summary <- combined %>%
   group_by(group) %>%
   summarise(customers = n(),
             conversions = sum(conversion, na.rm = T),
             conversion_rate = scales::percent(mean(conversion, na.rm = T), accuracy = 0.01),
+            conversion_var = var(conversion, na.rm = T),
             spend = scales::dollar(mean(spend, na.rm = T)))
 
 combined_summary %>%
   kable() %>%
   kable_styling(full_width = F)
+
+## calculate variance of spend 
+combined %>%
+  filter(conversion == 1) %>%
+  summarise(min_spend = min(spend, na.rm = T),
+            max_spend = max(spend, na.rm = T),
+            spend_var = var(spend, na.rm = TRUE),
+            spend_sd = sd(spend, na.rm = TRUE))
+
+## plot the distribution of spend
+ggplot(combined, aes(x = spend)) +
+  geom_histogram()
+
+# subset conversion and spend to perform F and t tests
+spend_designer <- combined %>%
+  filter(conversion == 1,
+         group == "Designer") %>%
+  select(spend)
+
+spend_house <- combined %>%
+  filter(conversion == 1,
+         group == "In-House") %>%
+  select(spend)
+
+conv_designer <- combined %>%
+  filter(group == "Designer")
+
+conv_house <- combined %>%
+  filter(group == "In-House")
+
+## F test to compare variance between groups
+var.test(spend_designer$spend, spend_house$spend,  alternative = c("two.sided"), conf.level = 0.95)
+var.test(conv_designer$conversion, conv_house$conversion,  alternative = c("two.sided"), conf.level = 0.95)
+
+## t-test conversion
+t.test(conversion~group, data = combined, var.equal = FALSE)
+
+## t-test spend
+spend <- combined %>%
+  filter(conversion == 1)
+
+t.test(spend~group, data = spend, var.equal = TRUE)
 
 ### Frequentist regression
 
